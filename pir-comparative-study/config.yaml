@@ -1,0 +1,24 @@
+# Global configuration for the Privacy-Preserving Information Retrieval study.
+# All parameters are passed explicitly through this file; no global state.
+
+# N: number of PIR servers (only servers 0 and 1 carry the active protocol).
+N: 2
+# K: number of messages in the dataset.
+K: 8
+# M: number of side-information messages already held by the PIR client.
+M: 2
+# L: length (number of field elements) of every message payload.
+L: 16
+# q: field size of the message alphabet (XOR-based PIR requires q == 2).
+q: 2
+# dataset_path: path to a CSV dataset (optional). If missing, synthetic data is used.
+dataset_path: null
+# random_seed: seed for all randomness (reproducibility).
+random_seed: 42
+# latency_repeats: number of timing repeats per approach (min is reported).
+latency_repeats: 5
+
+# K-Anonymity specific parameters.
+kanon:
+  prefix_len: 1        # number of prefix bits used to group messages into buckets
+  base: 2              # base used to encode message ids before prefixing

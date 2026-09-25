@@ -1,0 +1,1 @@
+"""Prefix-based k-anonymity for query hiding."""  # pragma: no cover

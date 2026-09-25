@@ -1,0 +1,1 @@
+"""Comparative study of privacy-preserving information retrieval (package)."""  # pragma: no cover

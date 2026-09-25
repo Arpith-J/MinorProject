@@ -1,0 +1,1 @@
+"""Comparison runner and Streamlit dashboard."""  # pragma: no cover

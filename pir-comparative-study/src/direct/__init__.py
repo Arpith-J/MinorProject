@@ -1,0 +1,1 @@
+"""Direct-access baseline (no privacy)."""  # pragma: no cover
