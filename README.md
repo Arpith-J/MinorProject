@@ -1,6 +1,6 @@
 # Comparative Study of Privacy-Preserving Information Retrieval
 
-This repository compares three approaches for retrieving records from a
+This repository compares four approaches for retrieving records from a
 server-side dataset while studying the **privacy**, **communication** and
 **computation** trade-offs that each one exposes:
 
@@ -9,8 +9,9 @@ server-side dataset while studying the **privacy**, **communication** and
 | 1 | **Direct Access** (baseline) | `src/direct` | `log2(K)` (everything) | `SELECT * FROM msgs WHERE id = ?` |
 | 2 | **K-Anonymity** (prefix-based query hiding) | `src/kanon` | `log2(k)` (bucket size) | send only a prefix, server returns a bucket of `k` rows |
 | 3 | **Two-Server PIR** (private information retrieval) | `src/pir` | `0` (unconditional) | XOR of sub-sampled messages from two non-colluding servers |
+| 4 | **PIR-PSI** (private IR with private side information) | `src/pir_psi` | `0` (unconditional) | XOR-only, capacity-achieving, sub-packetization `N-1`, no MDS codes |
 
-All three approaches are benchmarked against the same dataset through a
+All four approaches are benchmarked against the same dataset through a
 single comparison runner and a Streamlit dashboard.
 
 ## Requirements
@@ -41,6 +42,13 @@ Run the step-by-step demo (K=8, N=2, M=2, L=16):
 python scripts/run_demo.py
 ```
 
+Run the standalone PIR-PSI demo (N >= 3 servers, M >= 1 side-information
+messages):
+
+```bash
+python scripts/run_pir_psi_demo.py
+```
+
 Sweep K, N and M and regenerate `docs/results.md`, `docs/results.csv`
 and the experiment plots:
 
@@ -64,11 +72,15 @@ pir-comparative-study/
 │   ├── direct/            # baseline: no privacy
 │   ├── kanon/             # prefix-based k-anonymity
 │   ├── pir/               # two-server XOR PIR
+│   ├── pir_psi/           # PIR-PSI (query, server, client, decoder, capacity)
 │   └── comparison/        # runner + Streamlit dashboard
 ├── tests/                 # pytest suite (one file per module/phase)
+│                          #   incl. tests/test_pir_psi_*.py
 ├── scripts/               # demo and experiment drivers
+│                          #   incl. scripts/run_pir_psi_demo.py
 └── docs/
     ├── design.md          # architecture, algorithms, pseudocode
+    ├── pir_psi_design.md  # PIR-PSI scheme design and capacity notes
     └── results.md         # experiment tables and plots
 ```
 
@@ -84,6 +96,9 @@ pir-comparative-study/
   to each of two non-colluding servers so that neither one can distinguish
   the requested message from any other; the client XORs the two answers to
   recover the exact message (bit-exact recovery).
+- **PIR-PSI** — Private Information Retrieval with Private Side Information
+  (Erhili & Heidarzadeh, 2024). Capacity-achieving, constant
+  sub-packetization (`N-1`), XOR-only operations, no MDS codes required.
 
 ## Testing
 
@@ -92,9 +107,19 @@ pytest tests/              # all phases
 pytest --cov=src tests/    # coverage report (target > 80%)
 ```
 
+The suite currently collects **140 tests**, of which **72** come from the
+PIR-PSI modules (`tests/test_pir_psi_*.py`).
+
 ## Documentation
 
 - [`docs/design.md`](docs/design.md) — architecture, module descriptions and
   algorithm pseudocode.
 - [`docs/results.md`](docs/results.md) — regenerated tables and plots from
   `scripts/run_experiments.py`.
+
+## Reference
+
+L. Erhili and A. Heidarzadeh, "Achieving Capacity of PIR with Private Side
+Information with Low Sub-packetization and without MDS Codes," arXiv, 2024.
+(arXiv:2401.16630)
+
