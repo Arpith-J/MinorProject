@@ -22,3 +22,11 @@ latency_repeats: 5
 kanon:
   prefix_len: 1        # number of prefix bits used to group messages into buckets
   base: 2              # base used to encode message ids before prefixing
+
+# PIR with Private Side Information (Erhili & Heidarzadeh, 2024).
+# Requires N >= M + 1 servers and (N-1) | L; uses XOR only.
+pir_psi:
+  enabled: true
+  N_max: 6                          # maximum number of PIR-PSI servers
+  M_max: 4                          # maximum number of side-information messages
+  L_multiple_of_Nminus1: true       # enforce (N-1) | L (sub-packetization N-1)

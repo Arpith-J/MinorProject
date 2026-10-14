@@ -24,6 +24,10 @@ from src.kanon.client import KAnonClient  # noqa: E402
 from src.kanon.server import KAnonServer  # noqa: E402
 from src.pir.client import PIRClient  # noqa: E402
 from src.pir.server import PIRServer  # noqa: E402
+from src.pir_psi.capacity import capacity_rate  # noqa: E402
+from src.pir_psi.client import PIRPSIClient  # noqa: E402
+from src.pir_psi.query import build_query, probability_matrix  # noqa: E402
+from src.pir_psi.server import PIRPSIServer  # noqa: E402
 
 
 def demo_direct(messages, msg_id: int) -> None:
@@ -74,6 +78,44 @@ def demo_pir(messages, msg_id: int, side_info_ids) -> None:
     print("  Privacy: any single server cannot tell WHICH message was fetched (100% score).")
 
 
+def demo_pir_psi(messages, msg_id: int, side_info_ids, N: int) -> None:
+    print("=" * 70)
+    print("  APPROACH 4: PIR WITH PRIVATE SIDE INFORMATION (Erhili 2024)")
+    print("=" * 70)
+    K = len(messages)
+    L = messages[0].length
+    M = len(side_info_ids)
+    print(f"  0. P matrix (rows i=0..{M}, cols j=0..{K-M-1}):")
+    P = probability_matrix(M, K, N)
+    for i, row in enumerate(P):
+        print("     i=%d: " % i + "  ".join(f"{p:.4f}" for p in row))
+    servers = [PIRPSIServer(i, messages, N=N) for i in range(N)]
+    side_msgs = [m for m in messages if m.msg_id in set(side_info_ids)]
+    client = PIRPSIClient(
+        K=K, N=N, M=M, L=L, q=2,
+        side_info_ids=side_info_ids, side_info_messages=side_msgs, seed=42,
+    )
+    plan = build_query(msg_id, side_info_ids, K, N, M, client.rng)
+    print(f"  1. Private side information held by the client: {side_info_ids} "
+          f"(M={M}); demand = {msg_id}.")
+    print(f"  2. Sampled query type: (I, J) = ({plan.I}, {plan.J}), "
+          f"theta = {plan.theta}; sub-packetization = N-1 = {N - 1}.")
+    answers = []
+    for s, v in zip(servers, plan.vectors):
+        a = s.answer(v)
+        answers.append(a)
+        shown = "None (all-zero query)" if a is None else a.tolist()
+        print(f"  3. Query to server {s.server_id}: {v.tolist()}  ->  answer {shown}")
+    nz = sum(1 for a in answers if a is not None)
+    print(f"  4. {nz} of {N} servers answered; client XORs known side terms to decode.")
+    recovered = client.retrieve(msg_id, servers)
+    print(f"  5. Recovered message #{recovered.msg_id} "
+          f"(payload = {recovered.payload.tolist()}).")
+    print(f"  6. Capacity rate for (N={N}, K={K}, M={M}) is "
+          f"{capacity_rate(N, K, M):.4f}.")
+    print("  Privacy: I(W, S; Q_n) = 0 for every server n (information-theoretic).")
+
+
 def main() -> None:
     os.environ.setdefault("PYTHONHASHSEED", "0")
     print()
@@ -90,8 +132,10 @@ def main() -> None:
     print()
     demo_pir(messages, msg_id, side_info_ids)
     print()
+    demo_pir_psi(messages, msg_id, side_info_ids, N=3)
+    print()
     print("=" * 70)
-    print("  COMPARISON SUMMARY (one runner for all three approaches)")
+    print("  COMPARISON SUMMARY (one runner for all four approaches)")
     print("=" * 70)
     cfg = default_config()
     cfg.update({"K": 8, "N": 2, "M": 2, "L": 16, "q": 2, "latency_repeats": 5})

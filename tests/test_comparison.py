@@ -10,6 +10,7 @@ from src.comparison.runner import (
     load_config,
     prepare_dataset,
     run_all,
+    run_pir_psi,
     summarize,
 )
 from src.common.dataset import load_synthetic
@@ -24,7 +25,7 @@ def config():
 
 def test_run_all_returns_expected_structure(config):
     result = run_all(msg_id=3, config=config)
-    assert set(result["approaches"]) == {"direct", "kanon", "pir"}
+    assert set(result["approaches"]) == {"direct", "kanon", "pir", "pir_psi"}
     assert result["msg_id"] == 3
     for name, metrics in result["approaches"].items():
         assert "privacy" in metrics and "communication" in metrics
@@ -47,6 +48,16 @@ def test_pir_has_highest_privacy(config):
     assert privacy["pir"] > privacy["kanon"] > privacy["direct"]
     assert privacy["direct"] == 0.0
     assert privacy["pir"] == 1.0
+    assert privacy["pir_psi"] == 1.0
+
+
+def test_pir_psi_rate_beats_chor_for_positive_side_info(config):
+    # config has M=2 > 0; PIR-PSI should beat the Chor baseline rate 1/2.
+    result = run_all(msg_id=2, config=config)
+    psi = result["approaches"]["pir_psi"]
+    assert psi["capacity_rate"] > 0.5
+    assert psi["rate"] > 0.5
+    assert psi["servers"] >= config["M"] + 1
 
 
 def test_direct_has_lowest_latency_kanon_between(config):
@@ -69,7 +80,7 @@ def test_summarize_and_dashboard_helpers(config):
         "approach", "privacy_score", "leakage_bits", "bytes_sent",
         "bytes_received", "total_bytes", "latency_s",
     ]
-    assert len(report) == 3
+    assert len(report) == 4
     fig = plot_metrics(report)
     assert fig is not None
     import matplotlib.pyplot as plt
@@ -79,18 +90,28 @@ def test_summarize_and_dashboard_helpers(config):
 def test_summarize_equals_direct_call(config):
     result = run_all(msg_id=0, config=config)
     assert summarize(result) is not None
-    assert summarize(result).shape == (3, 7)
+    assert summarize(result).shape == (4, 7)
 
 
 def test_dashboard_build_config():
     cfg = _build_config(K=8, N=2, M=2, L=16, q=2, seed=1, prefix_len=2, latency_repeats=3)
     assert cfg["K"] == 8 and cfg["kanon"]["prefix_len"] == 2
     assert cfg["M"] == 2 and cfg["random_seed"] == 1
+    assert cfg["pir_psi"]["enabled"] is True
 
 
 def test_dashboard_run_comparison(config):
     result = run_comparison(config, msg_id=1)
-    assert set(result["approaches"]) == {"direct", "kanon", "pir"}
+    assert set(result["approaches"]) == {"direct", "kanon", "pir", "pir_psi"}
+
+
+def test_run_pir_psi_public_api(config):
+    result = run_pir_psi(msg_id=4, config=config)
+    assert result["recovered"] is True
+    assert result["privacy"]["privacy_score"] == 1.0
+    assert result["sub_packetization"] == result["servers"] - 1
+    assert result["capacity_rate"] > 0.5
+    assert 0.0 <= result["rate_ratio"] <= 1.5
 
 
 def test_load_config(tmp_path):

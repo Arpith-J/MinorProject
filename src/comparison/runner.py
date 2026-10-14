@@ -1,4 +1,4 @@
-"""Runs all three retrieval approaches on the same dataset and collects metrics.
+"""Runs all four retrieval approaches on the same dataset and collects metrics.
 
 Every approach is reduced to the same four metrics (privacy score, bytes
 exchanged, operation counts, latency) so the comparison is uniform and can be
@@ -31,6 +31,9 @@ from src.kanon.client import KAnonClient
 from src.kanon.server import KAnonServer
 from src.pir.client import PIRClient
 from src.pir.server import PIRServer
+from src.pir_psi.capacity import capacity_rate
+from src.pir_psi.client import PIRPSIClient
+from src.pir_psi.server import PIRPSIServer
 
 logger = logging.getLogger(__name__)
 
@@ -205,12 +208,115 @@ def _run_pir(
     }
 
 
+def _choose_pir_psi_N(config: Dict[str, object], M: int, L: int) -> int:
+    """Pick a server count usable by PIR-PSI (``N >= M+1``, ``(N-1) | L``).
+
+    The configured ``N`` is used when it already satisfies the constraints;
+    otherwise the smallest valid ``N`` is chosen.
+
+    Raises:
+        ValueError: If no ``N`` in ``[max(2, M+1), 64]`` makes ``L`` divisible
+            by ``N-1``.
+    """
+    configured = int(config.get("N", 2))
+    minimum = max(2, M + 1)
+    candidates = [n for n in range(minimum, 65) if L % (n - 1) == 0]
+    if not candidates:
+        raise ValueError(
+            f"no PIR-PSI server count N >= {minimum} divides L={L} into N-1 parts"
+        )
+    if configured in candidates:
+        return configured
+    return candidates[0]
+
+
+def _run_pir_psi(
+    messages: List[Message],
+    msg_id: int,
+    side_info_ids: Sequence[int],
+    config: Dict[str, object],
+) -> Dict[str, object]:
+    """Run the PIR-PSI approach and collect its metrics."""
+    repetitions = int(config.get("latency_repeats", 1))
+    K = len(messages)
+    L = messages[0].length
+    M = len(side_info_ids)
+    N = _choose_pir_psi_N(config, M, L)
+    servers = [PIRPSIServer(i, messages, N=N) for i in range(N)]
+    side_set = set(side_info_ids)
+    side_msgs = [m for m in messages if m.msg_id in side_set]
+    client = PIRPSIClient(
+        K=K, N=N, M=M, L=L, q=int(config.get("q", 2)),
+        side_info_ids=list(side_info_ids), side_info_messages=side_msgs,
+        seed=int(config.get("random_seed", 42)),
+    )
+
+    def op() -> None:
+        client.retrieve(msg_id, servers)
+
+    elapsed = _min_latency(op, repetitions)
+    recovered = client.retrieve(msg_id, servers)
+    comm = client.last_communication()
+    stats = client.last_stats or {}
+    downloaded = float(stats.get("downloaded_bits", 0) or 0)
+    measured_rate = (L / downloaded) if downloaded > 0 else 0.0
+    cap = capacity_rate(N, K, M)
+    return {
+        "privacy": {"leakage_bits": 0.0, "privacy_score": 1.0},
+        "communication": {
+            "bytes_sent": comm["bytes_sent"],
+            "bytes_received": comm["bytes_received"],
+            "total_bytes": comm["total_bytes"],
+        },
+        "computation": [
+            computation_cost(int(stats.get("xor_ops", 0)), "xors"),
+            computation_cost(int(N * K), "query_gen"),
+        ],
+        "latency_s": elapsed,
+        "recovered": _recovered_ok(messages, msg_id, recovered),
+        "rate": measured_rate,
+        "capacity_rate": cap,
+        "rate_ratio": (measured_rate / cap) if cap > 0 else 0.0,
+        "servers": N,
+        "sub_packetization": N - 1,
+        "side_info_used": M,
+    }
+
+
+def run_pir_psi(
+    msg_id: int,
+    side_info_ids: Optional[Sequence[int]] = None,
+    config: Optional[Dict[str, object]] = None,
+    messages: Optional[List[Message]] = None,
+) -> Dict[str, object]:
+    """Public entry point for the PIR-PSI approach.
+
+    Args:
+        msg_id: The message to retrieve.
+        side_info_ids: The private side-information ids (defaults to ``M``
+            random ids chosen with the config seed).
+        config: Configuration dict (defaults to :func:`default_config`).
+        messages: Optional pre-loaded dataset (otherwise loaded from config).
+
+    Returns:
+        The PIR-PSI metrics dict (same keys as the other approaches plus
+        ``rate``, ``capacity_rate`` and ``servers``).
+    """
+    cfg = config if config is not None else default_config()
+    K = int(cfg["K"])
+    if not 0 <= msg_id < K:
+        raise ValueError(f"msg_id {msg_id} out of range for K={K}")
+    side = list(side_info_ids) if side_info_ids is not None else _resolve_side_info(cfg, msg_id)
+    data = messages if messages is not None else prepare_dataset(cfg)
+    return _run_pir_psi(data, msg_id, side, cfg)
+
+
 def run_all(
     msg_id: Optional[int] = None,
     side_info_ids: Optional[Sequence[int]] = None,
     config: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
-    """Run direct access, k-anonymity and two-server PIR on one dataset.
+    """Run direct access, k-anonymity, two-server PIR and PIR-PSI.
 
     Args:
         msg_id: The message to retrieve (defaults to ``K // 2``).
@@ -238,6 +344,7 @@ def run_all(
             "direct": _run_direct(messages, target, cfg),
             "kanon": _run_kanon(messages, target, cfg),
             "pir": _run_pir(messages, target, side, cfg),
+            "pir_psi": _run_pir_psi(messages, target, side, cfg),
         },
     }
     logger.info("comparison run complete for msg_id=%d", target)
